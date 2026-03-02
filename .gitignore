@@ -1,5 +1,5 @@
-# test input file that isn't very important!!!
-test_input.py
+# test input files that isn't very important!
+test*.????
 
 # generated .bf files
 *.bf

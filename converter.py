@@ -1,45 +1,54 @@
 import sys
 import ast
 
-def convert_to_brainfuck(text):
+def convert_to_brainfuck(text, current_value=0):
     if not text:
-        return ""
+        return "", current_value
 
     result = []
     
     first_char_code = ord(text[0])
-
-    if first_char_code > 10:
-        import math
-        factor = int(math.sqrt(first_char_code))
-        loop_count = first_char_code // factor
-        remainder = first_char_code % factor
-        
-        # cell 0: outer loop counter (factor)
-        # cell 1: result accumulator (starts at 0)
-        
-        init_loop = (
-            f"{'+' * factor}"       # Set cell 0 = factor
-            "["                     # Start loop (while cell 0 > 0)
-            ">"                     # Move to cell 1
-            f"{'+' * loop_count}"   # Add loop_count to cell 1
-            "<"                     # Move back to cell 0
-            "-"                     # Decrement cell 0
-            "]"                     # End loop
-            ">"                     # Move pointer to cell 1 (result is generally here now)
-        )
-        
-        result.append(init_loop)
-        
-        if remainder > 0:
-            result.append('+' * remainder)
+    
+    if current_value == 0:
+        if first_char_code > 10:
+            import math
+            factor = int(math.sqrt(first_char_code))
+            loop_count = first_char_code // factor
+            remainder = first_char_code % factor
             
-        current_value = first_char_code
+            # cell 0: outer loop counter
+            # cell 1: result accumulator
+            
+            init_loop = (
+                f"{'+' * factor}"       # Set cell 0 = factor
+                "["                     # Start loop
+                ">"                     # Move to cell 1
+                f"{'+' * loop_count}"   # Add loop_count to cell 1
+                "<"                     # Move back to cell 0
+                "-"                     # Decrement cell 0
+                "]"                     # End loop
+                ">"                     # Move pointer to cell 1
+            )
+            
+            result.append(init_loop)
+            
+            if remainder > 0:
+                result.append('+' * remainder)
+            
+            current_value = first_char_code
+        else:
+            result.append('+' * first_char_code)
+            current_value = first_char_code
+            
+        result.append('.')
     else:
-        result.append('+' * first_char_code)
+        diff = first_char_code - current_value
+        if diff > 0:
+            result.append('+' * diff)
+        elif diff < 0:
+            result.append('-' * abs(diff))
+        result.append('.')
         current_value = first_char_code
-
-    result.append('.')
     
     for char in text[1:]:
         target_value = ord(char)
@@ -53,7 +62,7 @@ def convert_to_brainfuck(text):
         result.append('.')
         current_value = target_value
         
-    return "".join(result)
+    return "".join(result), current_value
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -73,20 +82,44 @@ if __name__ == "__main__":
             sys.exit(1)
 
         bf_code_parts = []
-        
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'print':
-                if node.args:
-                    arg = node.args[0]
-                    text_to_print = ""
+        current_cell_value = 0
+
+        for node in tree.body:
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+                call = node.value
+                if isinstance(call.func, ast.Name):
+                    func_name = call.func.id
                     
-                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                        text_to_print = arg.value
-                    elif isinstance(arg, ast.Str):
-                        text_to_print = arg.s
+                    if func_name == 'print':
+                        if call.args:
+                            arg = call.args[0]
+                            text_to_print = ""
+                            
+                            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                                text_to_print = arg.value
+                            elif isinstance(arg, ast.Str):
+                                text_to_print = arg.s
+                                
+                            if text_to_print:
+                                code_segment, current_cell_value = convert_to_brainfuck(text_to_print + "\n", current_cell_value)
+                                bf_code_parts.append(code_segment)
+
+                    elif func_name == 'input':
+                        if call.args:
+                            arg = call.args[0]
+                            prompt_text = ""
+                            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                                prompt_text = arg.value
+                            elif isinstance(arg, ast.Str):
+                                prompt_text = arg.s
+                            
+                            if prompt_text:
+                                code_segment, current_cell_value = convert_to_brainfuck(prompt_text, current_cell_value)
+                                bf_code_parts.append(code_segment)
                         
-                    if text_to_print:
-                        bf_code_parts.append(convert_to_brainfuck(text_to_print + "\n"))
+                        bf_code_parts.append(',----------[,----------]')
+                        
+                        current_cell_value = 0
 
         full_bf_code = "".join(bf_code_parts)
         
@@ -94,6 +127,7 @@ if __name__ == "__main__":
             f.write(full_bf_code)
             
         print(f"Success! Compiled '{input_file_path}' to 'output.bf'.")
+
         
     except FileNotFoundError:
         print(f"Error: File '{input_file_path}' not found.")
