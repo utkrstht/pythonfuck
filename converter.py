@@ -1,68 +1,272 @@
 import sys
 import ast
+import math
 
-def convert_to_brainfuck(text, current_value=0):
-    if not text:
-        return "", current_value
+class BrainfuckCompiler:
+    def __init__(self):
+        self.code = []
+        self.pointer = 0
+        self.cells = {}  
+        self.variables = {} 
+        self.next_free_cell = 2
 
-    result = []
-    
-    first_char_code = ord(text[0])
-    
-    if current_value == 0:
-        if first_char_code > 10:
-            import math
-            factor = int(math.sqrt(first_char_code))
-            loop_count = first_char_code // factor
-            remainder = first_char_code % factor
-            
-            # cell 0: outer loop counter
-            # cell 1: result accumulator
-            
-            init_loop = (
-                f"{'+' * factor}"       # Set cell 0 = factor
-                "["                     # Start loop
-                ">"                     # Move to cell 1
-                f"{'+' * loop_count}"   # Add loop_count to cell 1
-                "<"                     # Move back to cell 0
-                "-"                     # Decrement cell 0
-                "]"                     # End loop
-                ">"                     # Move pointer to cell 1
-            )
-            
-            result.append(init_loop)
-            
-            if remainder > 0:
-                result.append('+' * remainder)
-            
-            current_value = first_char_code
-        else:
-            result.append('+' * first_char_code)
-            current_value = first_char_code
-            
-        result.append('.')
-    else:
-        diff = first_char_code - current_value
+    def move_to(self, target_cell):
+        diff = target_cell - self.pointer
         if diff > 0:
-            result.append('+' * diff)
+            self.code.append('>' * diff)
         elif diff < 0:
-            result.append('-' * abs(diff))
-        result.append('.')
-        current_value = first_char_code
-    
-    for char in text[1:]:
-        target_value = ord(char)
+            self.code.append('<' * abs(diff))
+        self.pointer = target_cell
+
+    def get_current_value(self):
+        return self.cells.get(self.pointer, 0)
+
+    def set_cell_value(self, target_value):
+        current_value = self.get_current_value()
         diff = target_value - current_value
         
         if diff > 0:
-            result.append('+' * diff)
+            self.code.append('+' * diff)
         elif diff < 0:
-            result.append('-' * abs(diff))
+            self.code.append('-' * abs(diff))
             
-        result.append('.')
-        current_value = target_value
+        self.cells[self.pointer] = target_value
+
+    def zero_current_cell(self):
+        if self.get_current_value() == 0:
+            return
         
-    return "".join(result), current_value
+        self.code.append('[-]')
+        self.cells[self.pointer] = 0
+
+    def print_string(self, text):
+        if not text:
+            return
+
+        self.move_to(1)
+        current_val = self.get_current_value()
+
+        for i, char in enumerate(text):
+            char_code = ord(char)
+            
+            if i == 0 and current_val == 0 and char_code > 10:
+                factor = int(math.sqrt(char_code))
+                loop_count = char_code // factor
+                remainder = char_code % factor
+                
+                self.move_to(0)
+                self.zero_current_cell()
+                self.set_cell_value(factor)
+                
+                self.code.append('[')
+                self.move_to(1)
+                self.code.append('+' * loop_count)
+                self.move_to(0)
+                self.code.append('-')
+                self.cells[0] -= 1
+                self.code.append(']')
+                
+                self.cells[0] = 0 
+                
+                self.move_to(1)
+                self.cells[1] = factor * loop_count
+                
+                self.set_cell_value(char_code)
+                current_val = char_code
+            else:
+                self.set_cell_value(char_code)
+                current_val = char_code
+            
+            self.code.append('.')
+            
+        self.cells[1] = current_val
+
+    def compile(self, tree):
+        for node in tree.body:
+            self.visit(node)
+        return "".join(self.code)
+
+    def visit(self, node):
+        if isinstance(node, ast.Expr):
+            self.visit_Expr(node)
+        elif isinstance(node, ast.Assign):
+            self.visit_Assign(node)
+        elif isinstance(node, ast.If):
+            pass
+
+    def visit_Expr(self, node):
+        if isinstance(node.value, ast.Call):
+            self.visit_Call(node.value)
+
+    def visit_Call(self, node):
+        func_name = ""
+        if isinstance(node.func, ast.Name):
+            func_name = node.func.id
+        
+        if func_name == 'print':
+            self.handle_print(node)
+        elif func_name == 'input':
+            self.handle_input_void(node)
+
+
+    def copy_cell(self, src, dest, zero_dest=True):
+        self.move_to(0); self.zero_current_cell()
+        if zero_dest:
+            self.move_to(dest); self.zero_current_cell()
+        
+        self.move_to(src)
+        self.code.append('[')
+        self.move_to(dest); self.code.append('+')
+        self.move_to(0); self.code.append('+')
+        self.move_to(src); self.code.append('-')
+        self.code.append(']')
+
+        self.move_to(0)
+        self.code.append('[')
+        self.move_to(src); self.code.append('+')
+        self.move_to(0); self.code.append('-')
+        self.code.append(']')
+
+    def add_cell(self, src, dest):
+        self.copy_cell(src, dest, zero_dest=False)
+
+    def sub_cell(self, src, dest):
+        self.move_to(0); self.zero_current_cell()
+        
+        self.move_to(src)
+        self.code.append('[')
+        self.move_to(dest); self.code.append('-')
+        self.move_to(0); self.code.append('+')
+        self.move_to(src); self.code.append('-')
+        self.code.append(']')
+        
+        self.move_to(0)
+        self.code.append('[')
+        self.move_to(src); self.code.append('+')
+        self.move_to(0); self.code.append('-')
+        self.code.append(']')
+
+    def evaluate_expression(self, node, target_cell):
+        if isinstance(node, ast.Constant):
+            val = node.value
+            int_val = 0
+            if isinstance(val, int):
+                int_val = val % 256
+            elif isinstance(val, str) and len(val) == 1:
+                int_val = ord(val)
+            self.move_to(target_cell)
+            self.set_cell_value(int_val)
+            
+        elif isinstance(node, ast.Name):
+            src_var = node.id
+            if src_var in self.variables:
+                src_cell = self.variables[src_var]
+                if src_cell == target_cell:
+                    pass # x = x
+                else:
+                    self.copy_cell(src_cell, target_cell)
+                    
+        elif isinstance(node, ast.BinOp):
+            self.evaluate_expression(node.left, target_cell)
+            self.apply_operation(node.op, node.right, target_cell)
+            
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'input':
+            if node.args:
+                arg = node.args[0]
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    self.print_string(arg.value)
+            
+            self.move_to(target_cell)
+            self.zero_current_cell() 
+            self.code.append(',')
+            if target_cell in self.cells: del self.cells[target_cell]
+
+    def apply_operation(self, op, node, target_cell):
+        if isinstance(node, ast.Constant):
+            val = node.value
+            if isinstance(val, int):
+                self.move_to(target_cell)
+                if isinstance(op, ast.Add):
+                    self.code.append('+' * val)
+                elif isinstance(op, ast.Sub):
+                    self.code.append('-' * val)
+                
+                if target_cell in self.cells: del self.cells[target_cell]
+
+        elif isinstance(node, ast.Name):
+            src_var = node.id
+            if src_var in self.variables:
+                src_cell = self.variables[src_var]
+                if isinstance(op, ast.Add):
+                    self.add_cell(src_cell, target_cell)
+                elif isinstance(op, ast.Sub):
+                    self.sub_cell(src_cell, target_cell)
+                if target_cell in self.cells: del self.cells[target_cell]
+        
+        elif isinstance(node, ast.BinOp):
+            temp_cell = self.next_free_cell
+            self.next_free_cell += 1
+            
+            self.evaluate_expression(node, temp_cell)
+            
+            if isinstance(op, ast.Add):
+                self.add_cell(temp_cell, target_cell)
+            elif isinstance(op, ast.Sub):
+                self.sub_cell(temp_cell, target_cell)
+            
+            self.move_to(temp_cell)
+            self.zero_current_cell()
+            self.next_free_cell -= 1
+            
+            if target_cell in self.cells: del self.cells[target_cell]
+
+    def visit_Assign(self, node):
+        if len(node.targets) != 1: return
+        target = node.targets[0]
+        if not isinstance(target, ast.Name): return
+        
+        var_name = target.id
+        if var_name not in self.variables:
+            self.variables[var_name] = self.next_free_cell
+            self.next_free_cell += 1
+        
+        cell_idx = self.variables[var_name]
+        self.evaluate_expression(node.value, cell_idx)
+
+
+
+    def handle_print(self, node):
+        if not node.args:
+            self.print_string("\n")
+            return
+
+        arg = node.args[0]
+        
+        if isinstance(arg, ast.Name):
+            var_name = arg.id
+            if var_name in self.variables:
+                cell_idx = self.variables[var_name]
+                self.move_to(cell_idx)
+                self.code.append('.')
+                self.print_string("\n")
+        
+        elif isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            self.print_string(arg.value + "\n")
+        
+        elif isinstance(arg, ast.Str):
+            self.print_string(arg.s + "\n")
+
+    def handle_input_void(self, node):
+        # input() as statement -> wait for enter
+        if node.args:
+            arg = node.args[0]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                self.print_string(arg.value)
+        
+        self.move_to(0)
+        self.zero_current_cell()
+        self.code.append(',----------[,----------]')
+        self.cells[0] = 0
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -81,54 +285,14 @@ if __name__ == "__main__":
             print(f"Error parsing Python file: {e}")
             sys.exit(1)
 
-        bf_code_parts = []
-        current_cell_value = 0
-
-        for node in tree.body:
-            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
-                call = node.value
-                if isinstance(call.func, ast.Name):
-                    func_name = call.func.id
-                    
-                    if func_name == 'print':
-                        if call.args:
-                            arg = call.args[0]
-                            text_to_print = ""
-                            
-                            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                                text_to_print = arg.value
-                            elif isinstance(arg, ast.Str):
-                                text_to_print = arg.s
-                                
-                            if text_to_print:
-                                code_segment, current_cell_value = convert_to_brainfuck(text_to_print + "\n", current_cell_value)
-                                bf_code_parts.append(code_segment)
-
-                    elif func_name == 'input':
-                        if call.args:
-                            arg = call.args[0]
-                            prompt_text = ""
-                            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                                prompt_text = arg.value
-                            elif isinstance(arg, ast.Str):
-                                prompt_text = arg.s
-                            
-                            if prompt_text:
-                                code_segment, current_cell_value = convert_to_brainfuck(prompt_text, current_cell_value)
-                                bf_code_parts.append(code_segment)
-                        
-                        bf_code_parts.append(',----------[,----------]')
-                        
-                        current_cell_value = 0
-
-        full_bf_code = "".join(bf_code_parts)
+        compiler = BrainfuckCompiler()
+        bf_code = compiler.compile(tree)
         
         with open("output.bf", "w") as f:
-            f.write(full_bf_code)
+            f.write(bf_code)
             
         print(f"Success! Compiled '{input_file_path}' to 'output.bf'.")
 
-        
     except FileNotFoundError:
         print(f"Error: File '{input_file_path}' not found.")
     except Exception as e:

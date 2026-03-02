@@ -18,6 +18,11 @@ currently input() is/SHOULD be working great! <br>
 
 it is essentially print() which can accept input through `,` <br> it has a linefeed input, basically it'll accept input <br> until you press enter <br>
 
-it currently serves basically no purpose since we don't have variables implemented yet.
+it currently serves basically no purpose since we don't have <br>variables implemented yet.
+
+# operations/arithmetic
+currently supports very basic arithmetic in functions/operations <br>
+
++/- works and uhh i have nothing else to say
 
 uhh that's like all for now

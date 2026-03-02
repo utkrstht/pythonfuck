@@ -1,5 +1,5 @@
 # test input files that isn't very important!
-test*.????
+test*
 
 # generated .bf files
 *.bf
