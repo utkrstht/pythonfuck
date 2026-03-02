@@ -1,25 +1,58 @@
 import sys
 import ast
 
-# i'm thinking of a hardcoded table for the characters but like it's fine rn
-def generate_brainfuck_table():
-    table = {}
-    for i in range(256):
-        char = chr(i)
-        # simplistic approach: + for each value, . to print, [-] to clear
-        code = ('+' * i) + '. [-]'
-        table[char] = code
-    return table
-
-BRAINFUCK_TABLE = generate_brainfuck_table()
-
 def convert_to_brainfuck(text):
+    if not text:
+        return ""
+
     result = []
-    for char in text:
-        if char in BRAINFUCK_TABLE:
-            result.append(BRAINFUCK_TABLE[char])
-        else:
-            pass 
+    
+    first_char_code = ord(text[0])
+
+    if first_char_code > 10:
+        import math
+        factor = int(math.sqrt(first_char_code))
+        loop_count = first_char_code // factor
+        remainder = first_char_code % factor
+        
+        # cell 0: outer loop counter (factor)
+        # cell 1: result accumulator (starts at 0)
+        
+        init_loop = (
+            f"{'+' * factor}"       # Set cell 0 = factor
+            "["                     # Start loop (while cell 0 > 0)
+            ">"                     # Move to cell 1
+            f"{'+' * loop_count}"   # Add loop_count to cell 1
+            "<"                     # Move back to cell 0
+            "-"                     # Decrement cell 0
+            "]"                     # End loop
+            ">"                     # Move pointer to cell 1 (result is generally here now)
+        )
+        
+        result.append(init_loop)
+        
+        if remainder > 0:
+            result.append('+' * remainder)
+            
+        current_value = first_char_code
+    else:
+        result.append('+' * first_char_code)
+        current_value = first_char_code
+
+    result.append('.')
+    
+    for char in text[1:]:
+        target_value = ord(char)
+        diff = target_value - current_value
+        
+        if diff > 0:
+            result.append('+' * diff)
+        elif diff < 0:
+            result.append('-' * abs(diff))
+            
+        result.append('.')
+        current_value = target_value
+        
     return "".join(result)
 
 if __name__ == "__main__":
