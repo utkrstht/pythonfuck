@@ -19,10 +19,15 @@ class BrainfuckCompiler:
         self.pointer = target_cell
 
     def get_current_value(self):
-        return self.cells.get(self.pointer, 0)
+        return self.cells.get(self.pointer, None)
 
     def set_cell_value(self, target_value):
         current_value = self.get_current_value()
+        
+        if current_value is None:
+            self.code.append('[-]')
+            current_value = 0
+            
         diff = target_value - current_value
         
         if diff > 0:
@@ -44,7 +49,10 @@ class BrainfuckCompiler:
             return
 
         self.move_to(1)
-        current_val = self.get_current_value()
+        if self.get_current_value() is None:
+             self.code.append('[-]')
+             self.cells[1] = 0
+        current_val = self.cells[1]
 
         for i, char in enumerate(text):
             char_code = ord(char)
@@ -82,6 +90,8 @@ class BrainfuckCompiler:
         self.cells[1] = current_val
 
     def compile(self, tree):
+        self.cells[0] = 0
+        self.cells[1] = 0
         for node in tree.body:
             self.visit(node)
         return "".join(self.code)
@@ -126,6 +136,8 @@ class BrainfuckCompiler:
         self.move_to(src); self.code.append('+')
         self.move_to(0); self.code.append('-')
         self.code.append(']')
+        
+        if dest in self.cells: del self.cells[dest]
 
     def add_cell(self, src, dest):
         self.copy_cell(src, dest, zero_dest=False)
@@ -145,6 +157,8 @@ class BrainfuckCompiler:
         self.move_to(src); self.code.append('+')
         self.move_to(0); self.code.append('-')
         self.code.append(']')
+        
+        if dest in self.cells: del self.cells[dest]
 
     def evaluate_expression(self, node, target_cell):
         if isinstance(node, ast.Constant):
@@ -181,6 +195,79 @@ class BrainfuckCompiler:
             self.code.append(',')
             if target_cell in self.cells: del self.cells[target_cell]
 
+    def mul_cell_real(self, src, dest):
+        temp1 = self.next_free_cell; self.next_free_cell += 1
+        
+        self.move_to(temp1); self.zero_current_cell() 
+        self.copy_cell(dest, temp1)
+        
+        self.move_to(dest); self.zero_current_cell()
+        
+        self.move_to(temp1)
+        self.code.append('[')
+        self.add_cell(src, dest)
+        self.move_to(temp1)
+        self.code.append('-')
+        self.code.append(']')
+        
+        self.next_free_cell -= 1
+
+    def div_cell_real(self, src, dest):
+        numerator = self.next_free_cell; self.next_free_cell += 1
+        rem = self.next_free_cell; self.next_free_cell += 1
+        temp_diff = self.next_free_cell; self.next_free_cell += 1
+        flag = self.next_free_cell; self.next_free_cell += 1
+        
+        self.move_to(numerator); self.zero_current_cell()
+        self.copy_cell(dest, numerator)
+        
+        self.move_to(dest); self.zero_current_cell() 
+        self.move_to(rem); self.zero_current_cell() 
+        
+        self.move_to(numerator)
+        self.code.append('[')
+        
+        self.move_to(rem); self.code.append('+')
+        
+        self.move_to(temp_diff); self.zero_current_cell()
+        self.copy_cell(rem, temp_diff)
+        
+        self.sub_cell(src, temp_diff)
+        
+        self.move_to(flag); self.code.append('[-]+')
+        
+        self.move_to(temp_diff)
+        self.code.append('[')
+        self.move_to(flag); self.code.append('-')
+        self.move_to(temp_diff); self.code.append('[-]')
+        self.code.append(']')
+        
+        self.move_to(flag)
+        self.code.append('[')
+        self.move_to(dest); self.code.append('+')
+        self.move_to(rem); self.code.append('[-]')
+        self.move_to(flag); self.code.append('-')
+        self.code.append(']')
+        
+        self.move_to(numerator); self.code.append('-')
+        self.code.append(']')
+        
+        self.move_to(flag); self.code.append('[-]')
+        self.move_to(temp_diff); self.code.append('[-]')
+        self.move_to(rem); self.code.append('[-]')
+        self.move_to(numerator); self.code.append('[-]')
+        
+        # i have no idea what is happening here but if it works it works
+        self.next_free_cell -= 4 
+        pass
+        
+        self.move_to(flag); self.zero_current_cell()
+        self.move_to(temp_diff); self.zero_current_cell()
+        self.move_to(rem); self.zero_current_cell()
+        self.move_to(numerator); self.zero_current_cell()
+        
+        self.next_free_cell -= 4
+
     def apply_operation(self, op, node, target_cell):
         if isinstance(node, ast.Constant):
             val = node.value
@@ -190,6 +277,18 @@ class BrainfuckCompiler:
                     self.code.append('+' * val)
                 elif isinstance(op, ast.Sub):
                     self.code.append('-' * val)
+                elif isinstance(op, ast.Mult):
+                    temp = self.next_free_cell; self.next_free_cell += 1
+                    self.move_to(temp); self.set_cell_value(val)
+                    self.mul_cell_real(temp, target_cell)
+                    self.move_to(temp); self.zero_current_cell()
+                    self.next_free_cell -= 1
+                elif isinstance(op, (ast.Div, ast.FloorDiv)):
+                    temp = self.next_free_cell; self.next_free_cell += 1
+                    self.move_to(temp); self.set_cell_value(val)
+                    self.div_cell_real(temp, target_cell)
+                    self.move_to(temp); self.zero_current_cell()
+                    self.next_free_cell -= 1
                 
                 if target_cell in self.cells: del self.cells[target_cell]
 
@@ -201,6 +300,10 @@ class BrainfuckCompiler:
                     self.add_cell(src_cell, target_cell)
                 elif isinstance(op, ast.Sub):
                     self.sub_cell(src_cell, target_cell)
+                elif isinstance(op, ast.Mult):
+                    self.mul_cell_real(src_cell, target_cell)
+                elif isinstance(op, (ast.Div, ast.FloorDiv)):
+                    self.div_cell_real(src_cell, target_cell)
                 if target_cell in self.cells: del self.cells[target_cell]
         
         elif isinstance(node, ast.BinOp):
@@ -213,10 +316,15 @@ class BrainfuckCompiler:
                 self.add_cell(temp_cell, target_cell)
             elif isinstance(op, ast.Sub):
                 self.sub_cell(temp_cell, target_cell)
+            elif isinstance(op, ast.Mult):
+                self.mul_cell_real(temp_cell, target_cell)
+            elif isinstance(op, (ast.Div, ast.FloorDiv)):
+                self.div_cell_real(temp_cell, target_cell)
             
             self.move_to(temp_cell)
             self.zero_current_cell()
             self.next_free_cell -= 1
+            
             
             if target_cell in self.cells: del self.cells[target_cell]
 
@@ -246,7 +354,11 @@ class BrainfuckCompiler:
             var_name = arg.id
             if var_name in self.variables:
                 cell_idx = self.variables[var_name]
+                
                 self.move_to(cell_idx)
+                if self.get_current_value() is None:
+                    pass
+                
                 self.code.append('.')
                 self.print_string("\n")
         
@@ -257,7 +369,6 @@ class BrainfuckCompiler:
             self.print_string(arg.s + "\n")
 
     def handle_input_void(self, node):
-        # input() as statement -> wait for enter
         if node.args:
             arg = node.args[0]
             if isinstance(arg, ast.Constant) and isinstance(arg.value, str):

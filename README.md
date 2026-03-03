@@ -20,9 +20,16 @@ it is essentially print() which can accept input through `,` <br> it has a linef
 
 it currently serves basically no purpose since we don't have <br>variables implemented yet.
 
-# operations/arithmetic
+### operations/arithmetic
 currently supports very basic arithmetic in functions/operations <br>
 
-+/- works and uhh i have nothing else to say
++/-/division/* are supported, however due to brainfuck cells <br> being 8-bit integers, they cannot store floating point values.
+
+### variables
+we now have variables, but like, it's only char type variables and stuff since i haven't managed to figure it out yet
+
+i completely reworked the compiler since it now requires a state remembering thing to remember the state/value of the variables and uh yeah
+
+it can only store integers (which it converts to the ascii representation of the value, eg. 66 -> B), which also means each variable can only store a single character.
 
 uhh that's like all for now
