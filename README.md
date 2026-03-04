@@ -18,7 +18,6 @@ currently input() is/SHOULD be working great! <br>
 
 it is essentially print() which can accept input through `,` <br> it has a linefeed input, basically it'll accept input <br> until you press enter <br>
 
-it currently serves basically no purpose since we don't have <br>variables implemented yet.
 
 ### operations/arithmetic
 currently supports very basic arithmetic in functions/operations <br>
@@ -26,10 +25,18 @@ currently supports very basic arithmetic in functions/operations <br>
 +/-/division/* are supported, however due to brainfuck cells <br> being 8-bit integers, they cannot store floating point values.
 
 ### variables
-we now have variables, but like, it's only char type variables and stuff since i haven't managed to figure it out yet
+we now have variables!!!
 
 i completely reworked the compiler since it now requires a state remembering thing to remember the state/value of the variables and uh yeah
 
-it can only store integers (which it converts to the ascii representation of the value, eg. 66 -> B), which also means each variable can only store a single character.
+ahh, after so long it's working, so the variables can now store
+proper string and integers, and do not convert them to their ascii representation!! <br>
+
+### if/else statements + comparision
+we now have if/else statements, uhh no elif though.
+
+this is like half working, i think there's something wrong with the else statement but like idk 
+
+we have all the comparision operators as well (!=, ==, >, <)
 
 uhh that's like all for now

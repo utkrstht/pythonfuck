@@ -38,11 +38,102 @@ class BrainfuckCompiler:
         self.cells[self.pointer] = target_value
 
     def zero_current_cell(self):
-        if self.get_current_value() == 0:
-            return
-        
         self.code.append('[-]')
         self.cells[self.pointer] = 0
+
+    def print_number(self, cell_idx):
+        val = self.next_free_cell
+        hundreds = self.next_free_cell + 1
+        tens = self.next_free_cell + 2
+        ones = self.next_free_cell + 3
+        is_printing = self.next_free_cell + 4
+        temp = self.next_free_cell + 5
+        rem = self.next_free_cell + 6
+        self.next_free_cell += 7
+        
+        self.move_to(hundreds); self.zero_current_cell()
+        self.move_to(tens); self.zero_current_cell()
+        self.move_to(ones); self.zero_current_cell()
+        self.move_to(is_printing); self.zero_current_cell()
+        self.move_to(temp); self.zero_current_cell()
+        self.move_to(rem); self.zero_current_cell()
+        
+        self.copy_cell(cell_idx, val)
+        
+        self.move_to(val)
+        self.code.append('[')
+        
+        # ones++
+        self.move_to(ones); self.code.append('+')
+        
+        self.move_to(rem); self.zero_current_cell()
+        self.copy_cell(ones, rem)
+        self.move_to(rem); self.code.append('----------')
+        
+        self.move_to(temp); self.zero_current_cell(); self.code.append('+')
+        
+        self.move_to(rem)
+        self.code.append('[')
+        self.move_to(temp); self.code.append('-') # flag = 0
+        self.move_to(rem); self.code.append('[-]') 
+        self.code.append(']')
+        
+        self.move_to(temp)
+        self.code.append('[')
+        self.move_to(ones); self.zero_current_cell()
+        self.move_to(tens); self.code.append('+')
+        
+        self.move_to(rem); self.zero_current_cell()
+        self.copy_cell(tens, rem)
+        self.move_to(rem); self.code.append('----------')
+        
+        self.move_to(is_printing); self.zero_current_cell(); self.code.append('+')
+        
+        self.move_to(rem)
+        self.code.append('[')
+        self.move_to(is_printing); self.code.append('-') # flag2 = 0
+        self.move_to(rem); self.code.append('[-]')
+        self.code.append(']')
+        
+        self.move_to(is_printing)
+        self.code.append('[')
+        self.move_to(tens); self.zero_current_cell()
+        self.move_to(hundreds); self.code.append('+')
+        self.move_to(is_printing); self.code.append('-')
+        self.code.append(']')
+        
+        self.move_to(temp); self.code.append('-') # finish outer flag
+        self.code.append(']')
+        
+        self.move_to(val); self.code.append('-')
+        self.code.append(']')
+        
+        self.move_to(is_printing); self.zero_current_cell()
+        
+        self.move_to(hundreds)
+        self.code.append('[') 
+        self.move_to(is_printing); self.code.append('[-]+') 
+        self.move_to(hundreds)
+        self.code.append('++++++++++++++++++++++++++++++++++++++++++++++++.')
+        self.zero_current_cell() 
+        self.code.append(']')
+        
+        self.move_to(temp); self.zero_current_cell()
+        self.copy_cell(tens, temp)
+        self.add_cell(is_printing, temp)
+        
+        self.move_to(temp)
+        self.code.append('[')
+        self.move_to(tens)
+        self.code.append('++++++++++++++++++++++++++++++++++++++++++++++++.')
+        self.move_to(is_printing); self.code.append('[-]+') 
+        self.move_to(temp); self.zero_current_cell()
+        self.code.append(']')
+        
+        self.move_to(ones)
+        self.code.append('++++++++++++++++++++++++++++++++++++++++++++++++.')
+        
+        self.next_free_cell -= 7
 
     def print_string(self, text):
         if not text:
@@ -102,9 +193,55 @@ class BrainfuckCompiler:
         elif isinstance(node, ast.Assign):
             self.visit_Assign(node)
         elif isinstance(node, ast.If):
-            pass
+            self.visit_If(node)
+
+    def visit_If(self, node):
+        condition_cell = self.next_free_cell
+        self.next_free_cell += 1
+        
+        self.evaluate_expression(node.test, condition_cell)
+        
+        temp_cond = self.next_free_cell
+        self.next_free_cell += 1
+        
+        self.move_to(temp_cond); self.zero_current_cell()
+        self.copy_cell(condition_cell, temp_cond)
+        
+        self.move_to(temp_cond)
+        self.code.append('[')
+        
+        for child in node.body:
+             self.visit(child)
+        
+        self.move_to(temp_cond)
+        self.zero_current_cell()
+        self.code.append(']')
+        
+        if node.orelse:
+            else_flag = self.next_free_cell
+            self.next_free_cell += 1
+            
+            self.move_to(else_flag); self.zero_current_cell(); self.code.append('+')
+            
+            self.sub_cell(condition_cell, else_flag)
+            
+            self.move_to(else_flag)
+            self.code.append('[')
+            
+            for child in node.orelse:
+                 self.visit(child)
+            
+            self.move_to(else_flag); self.zero_current_cell()
+            self.code.append(']')
+            
+            self.next_free_cell -= 1
+
+        self.next_free_cell -= 2 # temp_cond, condition_cell
+        self.move_to(condition_cell); self.zero_current_cell()
+        if condition_cell in self.cells: del self.cells[condition_cell]
 
     def visit_Expr(self, node):
+
         if isinstance(node.value, ast.Call):
             self.visit_Call(node.value)
 
@@ -160,29 +297,217 @@ class BrainfuckCompiler:
         
         if dest in self.cells: del self.cells[dest]
 
+    def compare_string_eq(self, cell1, cell2, target):
+        self.move_to(target); self.zero_current_cell(); self.code.append('+') # Default success = 1
+        
+        diff = self.next_free_cell + 0
+        temp_val1 = self.next_free_cell + 1
+        temp_val2 = self.next_free_cell + 2
+        
+        for i in range(32):
+             self.move_to(diff); self.zero_current_cell()
+             self.move_to(temp_val1); self.zero_current_cell()
+             self.move_to(temp_val2); self.zero_current_cell()
+             
+             self.copy_cell(cell1 + i, temp_val1)
+             
+             self.copy_cell(cell2 + i, temp_val2)
+             
+             self.move_to(diff); self.zero_current_cell()
+             self.copy_cell(temp_val1, diff)
+             self.sub_cell(temp_val2, diff)
+             
+             self.move_to(diff)
+             self.code.append('[')
+             self.move_to(target); self.code.append('[-]')
+             self.move_to(diff); self.code.append('[-]') 
+             self.code.append(']')
+             
+             self.move_to(temp_val1); self.zero_current_cell()
+             self.move_to(temp_val2); self.zero_current_cell()
+
+    def compare_eq(self, cell1, cell2, target):
+        self.move_to(target); self.zero_current_cell(); self.code.append('+') # Default true
+        
+        diff = self.next_free_cell; self.next_free_cell += 1
+        self.move_to(diff); self.zero_current_cell()
+        self.copy_cell(cell1, diff)
+        self.sub_cell(cell2, diff) # diff = cell1 - cell2
+        
+        self.move_to(diff)
+        self.code.append('[')
+        self.move_to(target); self.code.append('-')
+        self.move_to(diff); self.code.append('[-]') 
+        self.code.append(']')
+        
+        self.next_free_cell -= 1
+
+    def compare_neq(self, cell1, cell2, target):
+        self.move_to(target); self.zero_current_cell()
+        
+        diff = self.next_free_cell; self.next_free_cell += 1
+        self.move_to(diff); self.zero_current_cell()
+        self.copy_cell(cell1, diff)
+        self.sub_cell(cell2, diff)
+        
+        self.move_to(diff)
+        self.code.append('[')
+        self.move_to(target); self.code.append('+')
+        self.move_to(diff); self.code.append('[-]')
+        self.code.append(']')
+        
+        self.next_free_cell -= 1
+
+    def compare_gt(self, cell1, cell2, target):
+        t1 = self.next_free_cell
+        t2 = self.next_free_cell + 1
+        temp = self.next_free_cell + 2
+        flag = self.next_free_cell + 3
+        self.next_free_cell += 4
+        
+        self.move_to(t1); self.zero_current_cell(); self.copy_cell(cell1, t1)
+        self.move_to(t2); self.zero_current_cell(); self.copy_cell(cell2, t2)
+        
+        self.move_to(t2)
+        self.code.append('[')
+        
+        self.move_to(flag); self.zero_current_cell()
+        self.move_to(temp); self.zero_current_cell()
+        
+        self.move_to(t1)
+        self.code.append('[')
+        self.move_to(temp); self.code.append('+')
+        self.move_to(flag); self.zero_current_cell(); self.code.append('+')
+        self.move_to(t1); self.code.append('-')
+        self.code.append(']')
+        
+        self.move_to(temp)
+        self.code.append('[')
+        self.move_to(t1); self.code.append('+')
+        self.move_to(temp); self.code.append('-')
+        self.code.append(']')
+        
+        self.move_to(flag)
+        self.code.append('[')
+        self.move_to(t1); self.code.append('-')
+        self.move_to(flag); self.code.append('-')
+        self.code.append(']')
+        
+        self.move_to(t2); self.code.append('-')
+        self.code.append(']')
+        
+        self.move_to(target); self.zero_current_cell()
+        self.move_to(t1)
+        self.code.append('[')
+        self.move_to(target); self.zero_current_cell(); self.code.append('+')
+        self.move_to(t1); self.code.append('[-]')
+        self.code.append(']')
+        
+        self.next_free_cell -= 4
+
+    def compare_lt(self, cell1, cell2, target):
+        self.compare_gt(cell2, cell1, target)
+
     def evaluate_expression(self, node, target_cell):
         if isinstance(node, ast.Constant):
             val = node.value
             int_val = 0
             if isinstance(val, int):
-                int_val = val % 256
-            elif isinstance(val, str) and len(val) == 1:
-                int_val = ord(val)
-            self.move_to(target_cell)
-            self.set_cell_value(int_val)
+                self.move_to(target_cell)
+                self.set_cell_value(val % 256)
+            elif isinstance(val, str):
+                if len(val) == 1:
+                    int_val = ord(val)
+                    self.move_to(target_cell)
+                    self.set_cell_value(int_val)
+                else:
+                    for i, char in enumerate(val):
+                        self.move_to(target_cell + i)
+                        self.set_cell_value(ord(char))
+                    self.move_to(target_cell + len(val))
+                    self.set_cell_value(0)
             
         elif isinstance(node, ast.Name):
             src_var = node.id
             if src_var in self.variables:
-                src_cell = self.variables[src_var]
-                if src_cell == target_cell:
-                    pass # x = x
-                else:
-                    self.copy_cell(src_cell, target_cell)
+                var_info = self.variables[src_var]
+                src_cell = var_info['address']
+                length = var_info.get('length', 1)
+                
+                for i in range(length):
+                    if target_cell + i == src_cell + i:
+                        pass
+                    else:
+                        self.copy_cell(src_cell + i, target_cell + i)
                     
         elif isinstance(node, ast.BinOp):
             self.evaluate_expression(node.left, target_cell)
             self.apply_operation(node.op, node.right, target_cell)
+
+        elif isinstance(node, ast.Compare):
+             left = node.left
+             op = node.ops[0]
+             comparator = node.comparators[0]
+             
+             is_string_comparison = False
+             
+             if isinstance(left, ast.Name) and left.id in self.variables:
+                 if self.variables[left.id]['type'] == 'string':
+                     is_string_comparison = True
+             elif isinstance(left, ast.Constant) and isinstance(left.value, str) and len(left.value) > 1:
+                     is_string_comparison = True
+
+             if isinstance(comparator, ast.Name) and comparator.id in self.variables:
+                 if self.variables[comparator.id]['type'] == 'string':
+                     is_string_comparison = True
+             elif isinstance(comparator, ast.Constant) and isinstance(comparator.value, str) and len(comparator.value) > 1:
+                     is_string_comparison = True
+             
+             left_cell = self.next_free_cell
+             if is_string_comparison: self.next_free_cell += 32
+             else: self.next_free_cell += 1
+             
+             self.evaluate_expression(left, left_cell)
+             
+             right_cell = self.next_free_cell
+             if is_string_comparison: self.next_free_cell += 32
+             else: self.next_free_cell += 1
+             
+             self.evaluate_expression(comparator, right_cell)
+             
+             if is_string_comparison:
+                  self.compare_string_eq(left_cell, right_cell, target_cell)
+             else:
+                 if isinstance(op, ast.Eq):
+                     self.compare_eq(left_cell, right_cell, target_cell)
+                 elif isinstance(op, ast.NotEq):
+                     self.compare_eq(left_cell, right_cell, target_cell)
+                     self.move_to(target_cell)
+                     temp = self.next_free_cell; self.next_free_cell += 1
+                     self.move_to(temp); self.zero_current_cell()
+                     self.code.append('+') # temp = 1
+                     
+                     self.move_to(target_cell)
+                     self.code.append('[') 
+                     self.move_to(temp); self.code.append('-') # temp = 0
+                     self.move_to(target_cell); self.code.append('[-]') 
+                     self.code.append(']')
+                     
+                     self.move_to(temp)
+                     self.code.append('[')
+                     self.move_to(target_cell); self.code.append('+')
+                     self.move_to(temp); self.code.append('-')
+                     self.code.append(']')
+                     
+                     self.next_free_cell -= 1
+
+                 elif isinstance(op, ast.Lt):
+                     self.compare_lt(left_cell, right_cell, target_cell)
+                 elif isinstance(op, ast.Gt):
+                     self.compare_gt(left_cell, right_cell, target_cell)
+                 
+             if is_string_comparison: self.next_free_cell -= 64
+             else: self.next_free_cell -= 2 
             
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'input':
             if node.args:
@@ -190,9 +515,29 @@ class BrainfuckCompiler:
                 if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                     self.print_string(arg.value)
             
+            sentinel_cell = target_cell - 1
+            if sentinel_cell < 1: 
+                sentinel_cell = 1
+            
+            save_loc = self.next_free_cell
+            self.next_free_cell += 1
+            self.move_to(save_loc); self.zero_current_cell()
+            self.copy_cell(sentinel_cell, save_loc)
+            
+            self.move_to(sentinel_cell); self.zero_current_cell()
+            
             self.move_to(target_cell)
-            self.zero_current_cell() 
-            self.code.append(',')
+            self.zero_current_cell()
+            
+            self.code.append(',----------[++++++++++>,----------]')
+            
+            self.code.append('<[<]>') 
+            self.copy_cell(save_loc, sentinel_cell)
+            self.move_to(save_loc); self.zero_current_cell()
+            self.next_free_cell -= 1
+            
+            self.move_to(target_cell)
+            
             if target_cell in self.cells: del self.cells[target_cell]
 
     def mul_cell_real(self, src, dest):
@@ -295,7 +640,7 @@ class BrainfuckCompiler:
         elif isinstance(node, ast.Name):
             src_var = node.id
             if src_var in self.variables:
-                src_cell = self.variables[src_var]
+                src_cell = self.variables[src_var]['address']
                 if isinstance(op, ast.Add):
                     self.add_cell(src_cell, target_cell)
                 elif isinstance(op, ast.Sub):
@@ -334,11 +679,35 @@ class BrainfuckCompiler:
         if not isinstance(target, ast.Name): return
         
         var_name = target.id
-        if var_name not in self.variables:
-            self.variables[var_name] = self.next_free_cell
-            self.next_free_cell += 1
         
-        cell_idx = self.variables[var_name]
+        value_type = 'int'
+        value_length = 1
+        
+        if isinstance(node.value, ast.Constant):
+            if isinstance(node.value.value, str):
+                if len(node.value.value) > 1:
+                    value_type = 'string'
+                    value_length = len(node.value.value) + 1 
+                else: 
+                    value_type = 'char'
+        elif isinstance(node.value, ast.Name):
+            if node.value.id in self.variables:
+                src_info = self.variables[node.value.id]
+                value_type = src_info.get('type', 'int')
+                value_length = src_info.get('length', 1)
+        elif isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id == 'input':
+             value_type = 'string'
+             value_length = 32
+
+        self.variables[var_name] = {
+            'type': value_type,
+            'length': value_length,
+            'address': self.next_free_cell
+        }
+        
+        cell_idx = self.variables[var_name]['address']
+        self.next_free_cell += value_length
+        
         self.evaluate_expression(node.value, cell_idx)
 
 
@@ -353,17 +722,43 @@ class BrainfuckCompiler:
         if isinstance(arg, ast.Name):
             var_name = arg.id
             if var_name in self.variables:
-                cell_idx = self.variables[var_name]
+                var_info = self.variables[var_name]
+                cell_idx = var_info['address']
+                var_type = var_info.get('type', 'int')
                 
-                self.move_to(cell_idx)
-                if self.get_current_value() is None:
-                    pass
+                if var_type == 'string':
+                     length = var_info.get('length', 1)
+                     start_cell = cell_idx
+                     sentinel_cell = start_cell - 1
+                     if sentinel_cell < 1: sentinel_cell = 1
+                     
+                     save_loc = self.next_free_cell; self.next_free_cell += 1
+                     self.move_to(save_loc); self.zero_current_cell()
+                     self.copy_cell(sentinel_cell, save_loc)
+                     
+                     self.move_to(sentinel_cell); self.zero_current_cell()
+                     
+                     self.move_to(start_cell)
+                     self.code.append('[.>]<[<]>')
+                     self.pointer = start_cell
+                     
+                     self.copy_cell(save_loc, sentinel_cell)
+                     self.move_to(save_loc); self.zero_current_cell()
+                     self.next_free_cell -= 1
+
+                elif var_type == 'int':
+                    self.print_number(cell_idx)
+                else:
+                    self.move_to(cell_idx)
+                    self.code.append('.')
                 
-                self.code.append('.')
                 self.print_string("\n")
         
         elif isinstance(arg, ast.Constant) and isinstance(arg.value, str):
             self.print_string(arg.value + "\n")
+            
+        elif isinstance(arg, ast.Constant) and isinstance(arg.value, int):
+             self.print_string(chr(arg.value % 256) + "\n")
         
         elif isinstance(arg, ast.Str):
             self.print_string(arg.s + "\n")
