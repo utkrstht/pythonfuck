@@ -22,20 +22,8 @@ class BrainfuckCompiler:
         return self.cells.get(self.pointer, None)
 
     def set_cell_value(self, target_value):
-        current_value = self.get_current_value()
-        
-        if current_value is None:
-            self.code.append('[-]')
-            current_value = 0
-            
-        diff = target_value - current_value
-        
-        if diff > 0:
-            self.code.append('+' * diff)
-        elif diff < 0:
-            self.code.append('-' * abs(diff))
-            
-        self.cells[self.pointer] = target_value
+        self.code.append('[-]' + '+' * (target_value % 256))
+        self.cells[self.pointer] = target_value % 256
 
     def zero_current_cell(self):
         self.code.append('[-]')
@@ -201,42 +189,36 @@ class BrainfuckCompiler:
         
         self.evaluate_expression(node.test, condition_cell)
         
-        temp_cond = self.next_free_cell
-        self.next_free_cell += 1
+        if_flag = self.next_free_cell
+        else_flag = self.next_free_cell + 1
+        self.next_free_cell += 2
         
-        self.move_to(temp_cond); self.zero_current_cell()
-        self.copy_cell(condition_cell, temp_cond)
-        
-        self.move_to(temp_cond)
+        self.move_to(if_flag); self.zero_current_cell()
+        self.move_to(else_flag); self.zero_current_cell(); self.code.append('+') # else_flag = 1
+
+        self.move_to(condition_cell)
         self.code.append('[')
+        self.move_to(if_flag); self.code.append('+')
+        self.move_to(else_flag); self.zero_current_cell() # if condition is true, else_flag = 0
+        self.move_to(condition_cell); self.code.append('-')
+        self.code.append(']')
         
+        self.move_to(if_flag)
+        self.code.append('[')
         for child in node.body:
              self.visit(child)
-        
-        self.move_to(temp_cond)
-        self.zero_current_cell()
+        self.move_to(if_flag); self.zero_current_cell()
         self.code.append(']')
         
         if node.orelse:
-            else_flag = self.next_free_cell
-            self.next_free_cell += 1
-            
-            self.move_to(else_flag); self.zero_current_cell(); self.code.append('+')
-            
-            self.sub_cell(condition_cell, else_flag)
-            
             self.move_to(else_flag)
             self.code.append('[')
-            
             for child in node.orelse:
                  self.visit(child)
-            
             self.move_to(else_flag); self.zero_current_cell()
             self.code.append(']')
-            
-            self.next_free_cell -= 1
 
-        self.next_free_cell -= 2 # temp_cond, condition_cell
+        self.next_free_cell -= 3 # if_flag, else_flag, condition_cell
         self.move_to(condition_cell); self.zero_current_cell()
         if condition_cell in self.cells: del self.cells[condition_cell]
 
@@ -300,31 +282,42 @@ class BrainfuckCompiler:
     def compare_string_eq(self, cell1, cell2, target):
         self.move_to(target); self.zero_current_cell(); self.code.append('+') # Default success = 1
         
-        diff = self.next_free_cell + 0
+        diff = self.next_free_cell
         temp_val1 = self.next_free_cell + 1
         temp_val2 = self.next_free_cell + 2
+        any_nonzero = self.next_free_cell + 3
+        self.next_free_cell += 4
         
         for i in range(32):
-             self.move_to(diff); self.zero_current_cell()
-             self.move_to(temp_val1); self.zero_current_cell()
-             self.move_to(temp_val2); self.zero_current_cell()
-             
+             self.move_to(any_nonzero); self.zero_current_cell()
              self.copy_cell(cell1 + i, temp_val1)
+             self.move_to(temp_val1)
+             self.code.append('[')
+             self.move_to(any_nonzero); self.code.append('+')
+             self.move_to(temp_val1); self.code.append('[-]')
+             self.code.append(']')
              
              self.copy_cell(cell2 + i, temp_val2)
+             self.move_to(temp_val2)
+             self.code.append('[')
+             self.move_to(any_nonzero); self.code.append('+')
+             self.move_to(temp_val2); self.code.append('[-]')
+             self.code.append(']')
              
              self.move_to(diff); self.zero_current_cell()
+             self.copy_cell(cell1 + i, temp_val1)
+             self.copy_cell(cell2 + i, temp_val2)
+             
              self.copy_cell(temp_val1, diff)
              self.sub_cell(temp_val2, diff)
              
              self.move_to(diff)
              self.code.append('[')
-             self.move_to(target); self.code.append('[-]')
+             self.move_to(target); self.zero_current_cell()
              self.move_to(diff); self.code.append('[-]') 
              self.code.append(']')
              
-             self.move_to(temp_val1); self.zero_current_cell()
-             self.move_to(temp_val2); self.zero_current_cell()
+        self.next_free_cell -= 4
 
     def compare_eq(self, cell1, cell2, target):
         self.move_to(target); self.zero_current_cell(); self.code.append('+') # Default true

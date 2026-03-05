@@ -2,6 +2,17 @@
 a simple python to brainfuck converter <br>
 being made for horizons @ hackclub <br>
 
+### just some yap
+i stopped working on this project since the compiler i was using, for some reason stopped working entirely. 
+
+uuh and like i'm bored of this now and i think this is super cool for now!!!
+
+## how to use
+download `converter.py`, and then either make your own program (with the converter's limitations in mind) or use a example program (from `/examples`) and run:
+`python converter.py <pythonfile>`
+
+it will generate a file `output.bf`, that is your generated brainfuck code.
+
 ## current functionality
 ### print()
 currently print() calls are working great! <br>
@@ -38,5 +49,6 @@ we now have if/else statements, uhh no elif though.
 this is like half working, i think there's something wrong with the else statement but like idk 
 
 we have all the comparision operators as well (!=, ==, >, <)
+
 
 uhh that's like all for now
